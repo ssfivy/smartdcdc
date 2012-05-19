@@ -1,0 +1,8 @@
+syntax:glob
+
+*.PcbDocPreview
+*.PCBDOCPreview
+*.SCHDOCPreview
+*.SchDocPreview
+*.SchPreview
+*/History/*

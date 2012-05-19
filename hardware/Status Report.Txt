@@ -1,0 +1,14 @@
+Output: Gerber Files
+Type  : Gerber
+From  : Project [Free Documents]
+   Generated File[Smart_DCDC_v5.GTO]
+   Generated File[Smart_DCDC_v5.GBO]
+   Generated File[Smart_DCDC_v5.RUL]
+   Generated File[Smart_DCDC_v5.EXTREP]
+   Generated File[Smart_DCDC_v5.REP]
+
+
+Files Generated   : 5
+Documents Printed : 0
+
+Finished Output Generation At 1:52:15 AM On 8/11/2009
