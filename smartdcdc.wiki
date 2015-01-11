@@ -1,0 +1,803 @@
+*Name: Smart DC-DC Converter
+*Designed by: Irving S Tjiptowarsono
+*Checked by: David Snowdon
+*Year: 2008-2009 
+*CVS Project Name: [[http://sunswift.unsw.edu.au/repos/cvs/smartdcdc smartdcdc]]
+*Scandal ID: SMARTDCDC (31)
+
+==Description==
+The SmartDCDC is a combination telemetry power supply / precharge controller for Tritium's Wavesculptor 20 motor controller. It can also be used with the more modern WaveSculptor 22.
+
+In early 2009, Sunswift upgraded the motor controller inside Sunswift III, before work started on Sunswift IV.
+The old motor controller was the Tritium Gold controller, which is superseded by the Wavesculptor 20.
+The new controller requires a precharge circuit, which uses two EV200 contactors from Tyco, each drawing a peak current of 3.8A.
+This is too large for the old telemetry power supply (miniDCDC) to handle. 
+Hence, we decided to build a new DC/DC converter which can supply enough current to power the contactors.
+ 
+Early in the design we decide to design and implement a custom precharge circuit into the DC/DC that will only use one contactor, 
+due to their weight and power draw. 
+Due to the complexity of designing such circuit in analog, the smartDCDC uses a MSP430 microcontroller to control the precharge process.
+This allows us to test the precharge algorithm and tweak the parameter values quite easily compared to an analog solution.
+Note that the both the miniDCDC and Tritium's precharge circuit are completely analog.
+
+Late in the design the CAN power is split into two separate lines with separate fuses. 
+This should help in isolating potential accidents to one side of the CAN without affecting the other. 
+Therefore it is recommended to put important components on one side and less important component on the other, with the smart dcdc in the middle.
+
+==Features==
+* Microprocessor control & CAN interface
+* Built-in Precharge circuit for Tritium WaveSculptor motor controller
+* Complete electrical isolation between high (~100+V) and low voltage side (12V)
+* 2x 12V General Purpose auxiliary output @ capable of delivering 12W.
+* On/off control on all power ports: CAN, Aux1, Aux2
+* On/off control on the DC/DC converter - requires external 12V source, either through CAN or aux.
+* Partial backward compatibility with both Sunswift miniDCDC and Tritium precharge circuit
+* 170V max operational voltage which should be enough for the wavesculptor
+* Separate power fuses for both CAN connectors, so one side can short while unaffecting the other. Non isolated though.
+* Fits in a pcb less than 13x13cm
+
+== Status ==
+
+Last updated: [[User:Irving|Irving]] 20:52, 26 April 2012 (EST)
+
+The development is complete. This is ready to go in the car.
+
+The smartdcdc was be developed in stages, one module at a time. In each stage, the parts for that module only will be populated, tested, then software will be written and the whole module undergoes testing. The order of development are listed below: 
+
+--Done--
+#Passive components - Done 
+#12V - 3.3V Switching Regulator - Done 
+#MSP430F149, including crystals and JTAG - Done 
+#Status LEDs - Done 
+#CAN interface - Done 
+#12V - 5V switching regulator - Done 
+#Aux Outputs x2 - Done
+#CAN power switch - Done
+#120-12V VI-J00 Isolated DC/DC Converter [HV] - Done
+#Contactor switch driver (need VI-J00 to actually test capacity) - Done
+#Relay driver for precharge - Done.
+#Isolated ADC module - Done
+#Voltage dividers [HV] - Done
+#Precharge circuit [HV] - Done
+#Heatsink temp sensor - Done
+#12V, 5V measurement - Done
+#Current sense for VI-J00 output [HV] - Done
+#Current sense for VI-J00 input [HV] - Done
+#VI-J00 Shutdown - Done
+#Adapting code to board version2. - Done
+#Calibration - Done
+#Debugging, extensive bench testing, safety testing - Done
+
+==Hardware Description==
+===Modules===
+The SmartDCDC is designed as a lot of small circuits which are mostly independent from each other. 
+All of them are controlled by the MSP430. 
+Hence if a particular function stops working chances are the problem is limited to the circuit for that function.
+
+List of modules:
+* High Voltage Modules
+** 150-12V Isolated DC/DC Converter (Vicor Corporation, VI-J00 Series, Part Number VI-J51-EY. Sourced from Mondo Electronics / Powerbox Australia )
+*** Current sense for VI-J00 output (TI INA214 series current shunt amplifier)
+** Precharge circuit
+*** Relay driver for precharge
+*** Contactor switch driver
+** Isolated ADC 
+*** Isolator+DC/DC (ADUM5401 Icoupler)
+*** ADC module (based on ADS8341, reused design from another Negsum)
+*** Voltage dividers
+*** Current sense for VI-J00 input
+
+* Low Voltage Modules
+** 12V - 3.3V Switching Regulator
+** 12V - 5V switching regulator
+** MSP430F149, including crystals and JTAG
+** CAN interface
+** CAN power switch
+** Aux Outputs x2
+** Heatsink temp sensor
+** 12V, 5V measurement
+** Status LEDs
+
+===Limits===
+Things that require hardware changes to alter.
+
+* Maximum design voltage: 200V (limited by VI-J00 and various calculations e.g. dividers)
+* Maximum precharge current: 2A (limited by the panasonic relay)
+* Maximum CAN current: 3A (limited by MOSFET switch and connector specs)
+* Voltage output: 5V, 12V (limited by MAX1626 design implementation and the VI-J00)
+* Maximum high voltage input current: 3A (set by fuse in fuseholder - don't use anything lower then 2A, also do not use fast blow fuses)
+* Maximum operational voltage: 171V (set by TVS diode on the high voltage input)
+* Voltage input range: 100-200V  (depends on the VI-J00 box used)
+* Maximum Aux current: 1A (limited by MOSFET switch)
+* Maximum Aux voltage: 30V(limited by MOSFET switch)
+
+===Connectors & Indicators===
+There are 3 LEDs on each side of the box.
+Connector part numbers are available in the schematic. The matching connectors are:
+
+* minifit jr (?? Farnell / WM3700-ND Digikey)
+* minifit jr crimps (?? Farnell / WM2501-ND Digikey)
+* microfit (?? Farnell / ?? Digikey)
+* microfit crimps (?? Farnell / ?? Digikey)
+* powerpole casing (?? Farnell / ?? Digikey)
+* powerpole crimps (?? Farnell / ?? Digikey)
+* TRIAD CAN connector (?? Farnell / ?? Digikey)
+
+====High Voltage Side====
+:* 1x anderson powerpole for Battery ground (black)
+:* 1x anderson powerpole for Battery VCC (red)
+:* 1x anderson powerpole for Wavesculptor VCC (blue)
+:* 1x Molex Minifit Jr socket for main contactor power
+:* Yellow LED, Precharge
+:* Red LED, Discharge
+:* Green LED, Contactor powered
+
+====Low Voltage Side====
+:* 2x Molex microfit socket for aux output
+:* 2x TRIAD 5F CAN connector
+:* Green LED, 3V3 power
+:* Red LED, programmable by MSP. Currently set to blinking during infinite loop.
+:* Yellow LED, programmable by MSP. Currently set to indicate whether CAN output is on or off.
+
+=== Precharge / Discharge Resistor ===
+
+There are 2x 100R LTO100 series resistors from Vishay, both used simultaneously for precharging and discharging. 
+200R is a somewhat sweet spot, since with the chosen resistor we have 200W power dissipation capacity,
+which can handle a 200V input without overloading.
+It took approx 13s to do a precharge / discharge. 
+
+They are mounted to the heatsink - see illustration in zip file for details.
+Without heatsinks they are only rated to about 4 W, so make sure the heatsink mounting is sound.
+For safety, they are mounted using electronically isolated heat pads, and are screwed with nylon screws.
+The heatsink itself does not need ventilation - under normal operation, the car will only be precharged / discharged a few times each day.
+The vicor box does not need a heatsink, as its normal load is quite low - approx 15W (which is actually pretty high for solar car telemetry!).
+
+===Precharge / Discharge Relay===
+This device uses the TK series relays from Panasonic, specifically the TK1-12V.
+It is capable of switching up to 200VDC up to 2A.
+Care must be taken when designing with this relay as its pins are relatively closely located,
+which may cause trouble during high voltage operation.
+
+[http://panasonic-denko.co.jp/ac/e/control/relay/signal/tk/attention/index.jsp This] is the relay home page.
+Do not use ultrasonic cleaning on the board, at least without removing the relay (and the VI-J00, i guess)
+
+The main contactor uses the [[:Image:Kilovac Czonka III EV200.pdf | EV200]] from CII Technologies (now Tyco). 
+This contactor, besides having a really cool name that sounds like a russian superweapon, has a 500A / 900V capacity. 
+It is recommended by Tritium for their precharge circuit, and they have been working pretty reliably during testing.
+They have a pretty big current draw when they turn on, which results in the design of this device.
+
+===Main DC/DC Converter===
+Vicor VI-J00 series is used. It has been used to fulfil the role of DC/DC conversion in the car before and found to have no problems. Hence it will still be used.
+
+===Mechanical===
+* The smartDCDC is designed to fit in the 1598BBK enclosure by Hammond Manufacturing.
+* The heatsink for the precharge/discharge resistors are xxx (TODO: Dig up details). It has some part of it cut off to fit in the case.
+* The enclosure does not include screws for mounting the PCB. they are labeled as "#6", but I found PC case screws to work well.
+* The screws used to mount the resistors are M3 nylon screws and nuts from Element14.
+
+== Software Description  ==
+
+Reference and explanation for the scandal channels.  
+If any conflict were found, refer to the source code for the correct explanation.
+
+The original code was based on the Sunswift 3 LHS driver controls. 
+
+=== Out channels  ===
+
+==== 0 - SMARTDCDC_BATT_VOLTAGE  ====
+
+Shows the battery voltage, in milivolts. Calibrated from approx 40 to 168 Volts.
+
+==== 1 - SMARTDCDC_WAVESCULPTOR_VOLTAGE ====
+
+Voltage across the wavesculptor DC bus, which means it is also (very close to) the capacitor voltage that we are precharging. Measured in milivolts. Calibrated from approx 0 to 168 Volts.
+
+==== 2 - SMARTDCDC_5V_VOLTAGE  ====
+
+5V Voltage measurement. May be noise prone due to long distance between resistors and MSP. Milivolts. Not accurate since it only uses two data points: 0 and 5V - as there is no way to turn off the 5V regulator.
+
+==== 3 - SMARTDCDC_12V_VOLTAGE  ====
+
+12V Voltage measurement. May be noise prone due to long distance between resistors and MSP.  Milivolts. Calibrated from approx 9 to 12 Volts
+
+==== 4 - SMARTDCDC_CAN_5V_VOLTAGE  ====
+
+5V Voltage measurement, CAN side. May be noise prone due to long distance between resistors and MSP.  Milivolts. Calibration values copied from 5V out channel since the hardware is identical.
+
+==== 5 - SMARTDCDC_CAN_12V_VOLTAGE  ====
+
+12V Voltage measurement, CAN side. May be noise prone due to long distance between resistors and MSP.  Milivolts. Calibration values copied from 12V out channel since the hardware is identical.
+
+==== 6 - SMARTDCDC_DCDC_IN_CURRENT  ====
+
+Input current to the VI-J00. This does not measure precharge current. Miliamps. May be prone to noise. Calibrated from approx 0 to 1 A
+
+==== 7 - SMARTDCDC_DCDC_OUT_CURRENT  ====
+
+Output current from the VI-J00. Some noise may occur because it is located between VI-J00 output capacitors and the load. Miliamps.  Calibrated from approx 0 to 2.5 A.
+
+Note: As of this writing the INA214 saturates at 2.5 A. Sensor should be changed with one with a different current value. [[User:Irving|Irving]] 15:51, 11 October 2009 (EST)
+
+==== 8 - SMARTDCDC_MSP_TEMP  ====
+Ambient temparature measured by the MSP430 on-chip temperature sensor. In milidegree celcius. Very roughly calibrated, using the fluke thermocouple and a hair dryer.
+
+==== 9 - SMARTDCDC_HEATSINK_TEMP  ====
+Heatsink temparature measured by the heatsink temp sensor. In milidegree celcius. Very roughly calibrated, using the fluke thermocouple and a hair dryer.
+
+Note: As of this writing this sensor sometimes outputs max voltage (3V3) when turned off and on again quickly. No idea on how to fix. [[User:Irving|Irving]] 15:51, 11 October 2009 (EST)
+
+=== Non calibrated out channels ===
+
+==== 10 - SMARTDCDC_PRECHARGE_STATUS====
+This shows the status of the precharge circuitry. There are 3 possible states: 
+*0 - IDLE - wavesculptor offline, discharging 
+*1 - PRECHARGE - wavesculptor precharging, relay on
+*2 - RUN - contactor on. 
+
+==== 11 - SMARTDCDC_AUX1_STATUS  ====
+Shows the status of aux output 1. 
+*0 means it is not powered. 
+*1 means it is powered.
+
+If the fuse is blown the smartdcdc will throw out an error. 
+
+==== 12 - SMARTDCDC_AUX2_STATUS  ====
+Shows the status of aux output 2
+*0 means it is not powered. 
+*1 means it is powered.
+
+If the fuse is blown the smartdcdc will throw out an error. 
+
+==== 13 - SMARTDCDC_CAN_STATUS  ====
+Shows that the CAN is powered or not.
+*0 means CAN is not powered. 
+*1 means CAN is powered. 
+
+==== 14 - SMARTDCDC_VICOR_STATUS ====
+Shows the status of the VI-J00.
+* 0 means vicor box is off
+* 1 means vicor box is on
+
+==== 15 - SMARTDCDC_RELAY_STATUS ====
+This is the actual relay position set and known by the MSP.
+* 0 means relay is off
+* 1 means relay is on
+
+==== 16 - SMARTDCDC_CONTACTOR_STATUS  ====
+Shows the status of the contactor output, as known by the MSP.
+*0 means it is not powered. 
+*1 means it is powered.
+
+If the fuse is blown the MSP will sense it and the smartdcdc will throw out an error.
+
+=== In channels  ===
+
+==== 0 - SMARTDCDC_IGNITION  ====
+
+Turns the wavesculptor on or off. 
+
+*To turn off, send a 0. 
+*To turn on (precharge), send a 1. If there are unsuitable conditions (eg input under voltage) it will throw out an error and goes back to 0.
+
+==== 1 - SMARTDCDC_AUX_1  ====
+
+Turns AUX output 1 on or off. 
+
+*To turn off, send a 0. 
+*To turn on, send a nonzero value.
+
+==== 2 - SMARTDCDC_AUX_2  ====
+
+Turns AUX output 2 on or off. 
+
+*To turn off, send a 0. 
+*To turn on, send a nonzero value.
+
+==== 3 - SMARTDCDC_CAN_POWER  ====
+Switches the CAN power on or off. 
+* To turn off, send 0
+* To turn on, send a nonzero value.
+A reset functionality might be implemented if needed - in this case can power will be turned off, wait 5000ms, and turned on again.
+
+==== 4 - SMARTDCDC_VI-J00  ====
+Switches the VI-J00 on or off.
+* To turn off, send 0
+* To turn on, send a nonzero value.
+Note that if the CAN network doesn't have any external power then the MSP will shut down, which will disable this function and restarts everything back on. This would have the effect of a telemetry reset (save the trackers)
+
+==== 5 - SMARTDCDC_RELAY_SWITCH ====
+Flips the precharge relay. Debug only. DO NOT TOUCH.
+
+==== 6 - SMARTDCDC_CONTACTOR_SWITCH ====
+Flips the contactor. Debug only. DO NOT TOUCH.
+
+=== Configuration parameters === 
+
+==== 0 - SMARTDCDC_PRECHARGE_CONTACT_VOLTAGE  ====
+Sets the maximum voltage difference for precharge to be considered finished. Basicaly voltage difference between BATTVCC and MCVCC must be less than this for the main contactor to engage. Default setting is 5000mV, set at programming.
+
+==== 1 - SMARTDCDC_PRECHARGE_MINIMUM_VOLTAGE  ====
+Determines the minimum bus voltage required to start the precharge process. This is to prevent the contactor activating while the batteries are isolated (bus voltage == wavesculptor == zero). Default setting is 40000mV, set at programming.
+
+==== 2 - SMARTDCDC_PRECHARGE_MINIMUM_TIME  ====
+Determines the minimum time required for precharging a device. This is a safety feature to prevent the contactor engaging before a certain amount of time is up (which could happen because of errors, etc)
+
+TO BE CHECKED:
+
+This value defaults to 5000 ms, which is 2.5x the time constant for the precharge circuit (200R, 10mF) giving a 91% charge. For the discharged SSIV pack this is 81.7V while a fully charged 2003 pack gives 141.2 V. Since the default contact voltage is 5V there should be little risk of precharge finishing before time is up unless something happens. 
+
+At the worst case scenario (200V) this corresponds to 182V or a 18V difference when the contactor engages. This should not be a problem.
+
+==== 3 - SMARTDCDC_PRECHARGE_MAXIMUM_TIME  ====
+Determines the maximum time allowed for a precharge operation. This is a safety feature to throw an error if precharge happens too slowly, which could mean something is wrong. Default is 15000ms.
+
+===Errors===
+
+==== 0 - SMARTDCDC_ERROR_NONE  ====
+Not implemented. 
+
+==== 1,2 - SMARTDCDC_ERROR_AUX#_FUSE_BLOWS  ====
+* Triggered by: Always on.
+* Checks for: This checks that the aux fuses are still intact by checking aux_vref. 
+* Fault condition: Aux fuses are blown.
+* Action: Sends errors.
+
+==== 3 - SMARTDCDC_ERROR_PRECHARGE_OVERTIME  ====
+Warning: This error, through implemented, has never been tested.
+
+* Triggered by: IGNITION input
+* Checks for: PRECHARGE_STATUS, MAXIMUM_TIME
+* Fault condition: Precharge operation still happening beyond the MAXIMUM_TIME.
+* Action: Sends error messages.
+
+==== 4 - SMARTDCDC_ERROR_PRECHARGE_UNDERTIME  ====
+Warning: This error, through implemented, has never been tested.
+
+* Triggered by: IGNITION input
+* Checks for: PRECHARGE_STATUS, MAXIMUM_TIME
+* Fault condition: Precharge operation still happening beyond the MAXIMUM_TIME.
+* Action: Sends error messages.
+
+==== 5 - SMARTDCDC_ERROR_CIRCUIT_OVERHEAT  ====
+* Triggered by: Always on.
+* Checks for: MSP430 on chip temperature sensor reading
+* Fault condition: Temperature higher than 70 C
+* Action: Send an over temp error every 3 s
+
+==== 6 - SMARTDCDC_ERROR_HEATSINK_OVERHEAT  ====
+* Triggered by: Always on.
+* Checks for: Heatsink temp sensor voltage reading
+* Fault condition: Temperature higher than 100 C
+* Action: Sends an over temp error every 3 s
+
+==== 7 - SMARTDCDC_ERROR_EEPROM  ====
+* Error in EEPROM
+* sent out if EEPROM read fails.
+
+==== 8 - SMARTDCDC_ERROR_INPUT_UNDER_VOLTAGE  ====
+* Triggered by: IGNITION input.
+* Checks for: BATTVCC Voltage reading
+* Fault condition: BATTVCC less than PRECHARGE_MINIMUM_VOLTAGE
+* Action: Sends an under voltage error, refuse to precharge.
+
+==== 9 - SMARTDCDC_ERROR_WAVESCULPTOR_OVER_VOLTAGE  ====
+* Triggered by: Always on.
+* Checks for: MCVCC, BATTVCC
+* Fault condition: MCVCC >= (BATTVCC + WAVESCULPTOR_OVER_VOLTAGE_THRESHOLD)
+* Action: Send error messages
+
+==== 10 - SMARTDCDC_ERROR_CONTACTOR_FUSE_BLOWS  ====
+* Triggered by: Always on
+* Checks for: if the fuse in the contactor output is intact / not thru contactor vref
+* Fault condition: Fuse blows, 
+* Action: Sends error messages. Not sure if it should engage discharge automatically, as I'm not sure what will happen if the contactor suddenly lose power. Will the resistor burn up?
+
+==== 11 - SMARTDCDC_ERROR_RELAY_POSITION_WEIRD ====
+* Triggered by: Always on
+* Checks for: if the contactor is activated but the relay is deactivated
+* Fault condition: contactor is activated but the relay is deactivated. Duh.
+* Action: Sends error messages. Not sure if it should engage discharge automatically.
+
+==== 12 - SMARTDCDC_ERROR_BUS_VOLTAGE_MISSING ====
+* Triggered by: Undervoltage error while on STATUS_RUN (contactor is engaged)
+* Checks for: Battvcc and MCVCC (in case of errors)
+* Fault condition: Voltage drops below PRECHARGE_MINIMUM_VOLTAGE
+* Action: Sends error message, DO AUTOMATIC DISCHARGE (Switch to discharge state)
+
+Additional info: See [[2009_SmartDCDC#Possible_disaster_Scenarios | Possible Disaster Scenarios ]] below.
+
+==Installation==
+There are 3 wires on the high voltage side.
+* One wire goes to the battery positive, through a switch / circuit breaker.
+* One wire goes to the motor controller positive.
+* One wire goes to ground.
+
+For the precharge circuit to work, the arrangement would be:
+
+          contactor
+ batt+)-x----o/ o--x-----(motorcontroller+
+        |      #   |
+        |      #   --[MCVCC             ]
+        |      ######[Minifit JR  Smart ]
+        --o/ o-------[BATTVCC     DC-DC ]
+         switch    --[GND               ]
+                   |
+ batt-)------------x-----(motorcontroller-
+
+There are more connectors on the low voltage side.
+* The minifit jr connector should be hooked up to the EV200 relay.
+* The two CAN connectors should be connected to the CAN bus or terminated.
+* The aux output are there for switchable general purpose 12V output. Use it for horns or the like.
+
+It is recommended to put important components on one side and less important component on the other, with the smart dcdc in the middle. 
+This way if one side shorts and blow the power fuses, the other can still run.
+
+==DC/DC Conversion User Guide==
+The SmartDCDC will output power on both the 12V and 5V line when a high voltage input is given.
+You can switch the CAN output on and off through the CAN bus, but if you don't have any auxiliary power
+then you can't turn it back on as there will be no node powered up to send the "ON" message.
+
+The recommended way of switching the telemetry system of the solar car is to flip the high voltage breaker supplying power to the smartDCDC.
+
+==Wavesculptor Precharge Operation User Guide==
+===Operating Overview===
+If everything is hooked up properly, you only need to send a "1" to SMARTDCDC_IGNITION to make the smartDCDC automatically precharge and engage the contactor. To discharge, simply send a "0" to the same channel.
+
+=== Current Setup===
+From a freshly programmed image:
+# Change the address of the node - as of time of writing this is 50.
+# Set SMARTDCDC_IGNITION to listen to driver controls.
+# Set any other inputs as you wish - this is most likely the AUX inputs.
+Done!
+
+===Car Startup / Shutdown Sequence===
+For reference: A is the main contactor, B is SPDT precharge relay hooked in parallel to main.
+The SPDT's initial position connects MCVCC with BATTGND. It will connect MCVCC with BATTVCC when activated.
+
+0 Car off
+* 12V off
+* CAN power, aux, precharge off
+* A breaks, B connects MCVCC with BATTGND
+
+1 Battery ON
+* VI-J00 operational, 12V gets powered
+* CAN power offline
+* MSP started up
+* MSP waits before turning CAN on to ensure the output caps are charged.
+* MSP turns on aux output or switch off CAN or VI-J00 as commanded.
+* Status message IDLE
+
+2 Received channel message "Motor ON"
+* B engages, precharging the MC
+* Status message PRECHARGE
+
+3 Motor / Bus Voltage match
+* A engages, shorting the MC/Battery
+* Status message RUN
+
+4 Received channel message "Motor OFF"
+* A breaks
+* B disengages, discharging the MC
+* Status message IDLE
+
+===Possible relay combination===
+during precharge/normal operation (power from battery)
+:null   = MC disconnected, discharging
+:A      = BAD: Discharging battery through 1K resistor
+:B      = precharging / BAD: Drives motor while sinking energy thru Precharge resistor
+:AB     = Controller on
+
+during regen
+:null   = BAD: sinks energy thru 1K resistor
+:A      = BAD: Charging battery and sinks energy in the 1K resistor
+:B      = Attempts to charge battery thru Precharge Resistor, but stopped by diode.
+:AB     = Charging battery
+
+==Safety==
+Safety warning
+#Treat everything as live
+#Don't rely on the LEDs, they can break.
+
+Safety Measures
+# All high and low voltage circuits are isolated
+
+
+===Possible disaster Scenarios===
+'''bug in code'''
+solution: Testing and more testing.
+It's been tested for quite a while and never showed weird behavior, so this shouldn't be too much of a problem.
+
+'''Wrong voltage calibration value, shorting the Batt/MC when not precharged properly'''
+
+Solution: 
+# Timer feature in the code that requires 6000ms wait time between engaging relay & engaging contactor.
+
+'''VI-J00 is reset / MSP is reset / MSP Watchdog activates'''
+
+Solution:
+# The initial/stable circuit is designed not to blow up anything under any condition except:
+# during regen, stable circuit will sink all regen energy into discharge resistor. The motor controller will go into voltage limiting mode (usually set around ~130V, but let's assume 160V) and pump 160V across 200R - less than 1A of current. This will eventually melt some stuff,
+but by then the strategist should notice something wrong (as motor controller voltage, one of the most closely monitored things, will max out.)
+
+Scenarios for each state of the precharge circuit:
+* Off : No problems here.
+* MSP On / Discharging : No problems here. Any and all reset will fall back to this condition.
+* Precharging : Shouldn't have too many problems - see below.
+* Wavesculptor online : Normal discharging.
+* Wavesculptor Regen : See above.
+* Discharging Regen : Very very unlikely, but there should be no change.
+
+'''Someone turns off the ignition (discharging), then halfway through turns on again (precharge)'''
+Tested on the bench, smartdcdc just flips its relay without any issue.
+
+'''Precharge, 5ms, discharge, 5ms, precharge, 5ms, etc etc'''
+I was paranoid. Untested since I dont have time to set up a software to do this.
+
+'''Contactor breaks'''
+Solution: Break relay to fall into stable condition?
+
+'''Relay breaks'''
+Solution: Break contactor to fall back into stable condition?
+
+'''External power while everything is disconnected will fool the MSP into thinking that BATTVCC == MCVCC == BATTGND means the MC is charged, and engages the main contactor'''
+
+The box will not switch into precharge mode if the bus voltage is below a certain voltage. This is to prevent a specific scenario:
+# battery disconnected
+# aux dcdc battery connected
+# telemetry ON
+# bus voltage 0
+# wavesculptor voltage 0
+# precharge; 0==0, main contact engage
+# battery connected, short circuit to wavesculptor
+# BOOM
+  
+Solution: Precharge cannot happen if bus voltage is below ~50V.
+
+''' If the battery is disconnected while there is an external 12V power.... '''
+then the following scenario could occur:
+# everything on.
+# battery disconnected
+# external 12v keeps everything alive
+# wavesculptor got discharged over time / by some random phenomena
+# smartdcdc thinks everything still running as usual (contactor active), WITH WS DISCHARGED
+# battery got plugged in
+# BOOM
+
+Solution: Automatic discharge when bus voltage goes below minimum threshold (~50V).
+
+===Bench Testing===
+====Capacitor testing====
+Hooked to 2x4700vF 200V caps.
+
+* repeated Precharge, online, discharge. Complete action each time. - PASS
+* Switching to precharge while discharging  - PASS
+* off (discharging) sdcdc hooked up to charged capacitors - PASS
+* resetting off msp during precharge, online, discharge - PASS
+* regen testing - PASS
+
+====Wavesculptor normal test====
+* Tried a variety of operations with no issues.
+
+====Wavesculptor Regen test====
+* Cannot test on the bench due to lack of another motor. Tested in solar car, works fine.
+
+==Miscellanous Information==
+===Comparison with Tritium Precharge/Discharge controller===
+
+* It has a programmable microcontroller in it.
+* All high voltage components are rated at 200V.
+* It only has a single precharge / discharge resistor is 2x100R instead of 47R so that current will never go beyond 2A and the resistor is actually rated properly. The startup time would increase to about 8s, but it's better than having a fried resistor. The same resisotr is used for discharge, so discharge time will decrease from 25s to 8s.
+* Uses Panasonic TK relay instead of hamlin for higher power & voltage capability (farnell: 1380961). Not sure what tritium thinks though; datasheet shows the hamlin relay only does 0.25A?
+
+===Comparison with Sunswift Mini DCDC v1.2===
+
+* It has a programmable microcontroller in it
+* the two aux and CAN can be switched on/off
+* Aux outputs can handle 24V/1A
+* Components upgraded / changed because they're not available at farnell anymore.
+* doesn't have that horrible 0.x clearance between one of the high voltage cap pad and a high voltage track
+
+===Method of soldering===
+* Everything on the bottom side should be compatible with wave soldering.
+* See resistors.png in the zip file to get an idea on how the resistor and heat sink are mounted.
+
+You can solder this using the [[Soldering | usual method]], however leave the heatsink temp sensor, power resistors, and VI-J00 to the very last.
+* Next, you must pre-drill the heatsink. Trim it sideways, cut off one fin, trim the rest of the fins, and drill the screwholes. waga waga. Check that it is drilled in the correct places with another blank PCB.
+* After you are sure the heatsink is OK, mount it on the VI-J00, and mount all the screws.
+* solder the VI-J00 into place.
+* Put the power resistors and temp sensor into place, but DO NOT SOLDER THEM. Put thermal paste/pad, and screw them tight.
+* Finally, solder the power resistors & temp sensor.
+
+===Design Considerations===
+
+* General purpose output: They are designed to handle the power pulled by these: [http://www.osram.com/osram_com/Professionals/Opto_Semiconductors_&_LED/LED_Systems_Product_Portfolio/General_lighting_/COINlight-OSTAR/index.html]. If we want 24V headlight we can just order a new vicor box that converts to 24V, put that in and voila! (Note: This was when there was a speculation of a night stage. There never was.)
+* The precharge / discharge circuit was designed around the LTO100 resistor and the TK relay. The resistor is chosen because of its availability in farnell and its high power dissipation, while being compact enough. The TK relay is choses because of its high switching capacity of 200vdc, albeit only at 2A max current and its small size.
+* The PCB was designed to fit the Hammond Manufacturing 1598BBK instrument case. It was chosen because of its removeable endpanel, farnell availability, black color and it is the smallest box that seems to do the job (routing it was not fun, but so worth it)
+* Some safety precautions are based on the fact that the wavesculptor has a safety mechanism on its own to halt a full power regen when the dc bus is suddenly broken. Increasing the bus voltage beyond specifications would have the risk of making that feature not working which could have dire consequences.
+* Voltage ADC: Sampling rate is set at around 2 kHz, hence the low pass filter cutoff frequency is set at 2khz * 1/2 = 1 kHz. 
+* Differential measureent can be implemented but it can't be used to measure bus voltage.
+
+==Revision History==
+
+# At first, there was a zillion PCB layout rough designs. 
+# Then, PCB layout v4 emerged victorious. This get manufactured as Unit 00.
+# During development of Unit 00 errors are found and listed in Errata below.
+# Unit 01 is manufactured, fixing those bugs. This is the version used for 2009 WSC.
+
+== Errata - Unit 01 Errors == 
+=== Wrong relay footprint  ===
+
+*NOT FIXED 
+*sunswiftlib updated without updating the PCB&nbsp;;_; 
+*TK1-12V footprint is wrong. Datasheet is bottom view. Need to correct sunswiftlib. 
+*Hardwired fix on Unit 1:<br>
+
+Trace cuts: 
+
+#Trace cut - Isolate the 12V line from the relay. 
+#Trace cut - Isolate the 12V line from the relay. 
+#Modwire -&nbsp;Connects negative coil voltage to the correct point (transistor Q2)
+#Modwire -&nbsp;Connects 12V to the correct pin on the TK1-12V (from the fuse)
+#Modwire -&nbsp;Connects the 12V line to the fuse at resistor R5<br>
+
+=== 12V Current Sensor saturates ===
+* As title said. Measurement saturates at 2.5 A
+* Might be able to be fixed by changing the current sensor and resistor
+
+=== SmartDCDC can stay on even when its circuit breaker turned off ===
+To replicate:
+* Turn on the entire solar car
+* Precharge the motor controller until the contactor engages
+* Turn off the smartdcdc circuit breaker
+
+This is because of a current feedback from the battery, through the contactor and MCVCC line, which is still connected by the internal relay into the smartDCDC BATTVCC.
+
+To fix: 
+* Add a diode into the BATTVCC line between the VI-J00 input and relay, preventing current from relay to activate the VI-J00
+* Do not add diode on the MCVCC line as we need current flowing both ways for precharge / discharge.
+
+
+=== Miscellaneous ===
+To test: 
+* The heatsink temp sensor outputs max voltage if it is turned off and quickly turned on again?
+
+==Errata - Unit 00 Errors fixed in Unit 01==
+
+=== R45, R46 - SPI Clearance ===
+pcb fixed
+
+Must have happened during the final stages before sending to BEC. The high voltage side of R45 can go as high as 200V while separated <1mm from the SPI bus. This '''WILL''' mess up the entire unisolated low voltage side.
+
+===Temperature Sensor Isolation===
+schematic corrected... pcb fixed
+
+need to buy new temp sensor and thermal isolating pads
+
+Re-reading the LM35DZ datasheet, there is no isolation rating specified anywhere. Thus, it is assumed that the sensor should not be attached across the isolation barrier, as in unit 00. 
+
+Furthermore, the case used in unit 00 (TO-92) does not conduct heat in a satisfactory manner and relied on the electrical pins for temperature sensing. Henceforth it is preferable to use other case, such as the TO-220 which is ideal since it can be screwed to the heatsink. However its metal tab is connected to the ground pin, hence an isolation thermal pad is needed, such as [http://au.farnell.com/wakefield-thermal-solutions/173-9-210p/thermal-insulator/dp/1723777 1723777]. Squeezing it into the high voltage side seems doable, and on the ADC it will replace the relay centre tap which is kinda useless.
+
+===Test points===
+sunswiftlib created, adding to schematic as we go, pcb fixed
+
+Need more test points for debugging. Particularly anything that needs voltage sensing should have test points.
+
+===Negsum hates smartdcdc===
+See below.
+
+5V rails doesn't stabilize properly. ADC is powered from 5V. 
+
+Need to fix boot up sequence? (CAn disabled by default, then turned on by MSP) WARNING THIS MEANS RESETTING THE SMARTDCDC WILL RESET EVERY OTHER NODE IN THE CAR!
+
+===5V power supply===
+schematic corrected... pcb fixed
+
+need to buy inductors
+
+The 5V inductor is too small? it doesnt supply enough current to 5V rail?
+
+No, I guess the problem is that there's a current spike when the telemetry network is turned on. the 5V rail might draw a huge spike for a brief period before calming down. Current suspect is inductor saturation.
+
+Solution: Replace the new inductor with the old inductor.
+
+=== R25 value===
+corrected.
+
+It should be 330K instead of 220K. Correct this in schematic.
+
+=== CAN Shield ground ===
+schematic corrected... pcb fixed
+
+Should not be connected to CANGND. Never. Correct this in schematic and board.
+
+=== Wrong footprint ===
+changed to mcct-casec, offending sunswiftlib entry deleted.... pcb fixed
+
+4u7 tantalum caps on the LTC1474 have wrong footprint. They're too small. Need to correct sunswiftlib.
+
+=== 3V3 Current Limit ===
+*schematic: added extra footprint, changed both to 1R2, inductor changed to 1644442, footprint corrected.
+*pcb:... pcb fixed
+
+need to buy inductors
+
+The iCoupler draws more current than expected, this results in the LTC1474 current limiting if the smartdcdc power is cut off for a brief moment in time. Reducing Isense to 0R6 seems to fix it. Inductor current capacity is 120 mA, which is not sufficient for handling peak current according to one of the equations in datasheets. Hence inductor is changed to 158902. there is enough space on the board to accomodate the large size, and if the inductor turns out to be unsuitable for whatever reason there we can still solder the old one back, which has been performing quite well with a corrected Rsense.
+
+===iCoupler caps===
+...pcb fixed
+
+They're supposed to be only 2mm away from the pins. Next revision, push them closer.
+
+=== Useless resistor ===
+...left alone
+
+R49, the iCoupler load (390R) end up just dropping the 3V3 bus to 2.5 for some reason. Need to see if the ADC worked reasonably well without it, if yes then remove it in next version, or try using a higher value.
+
+This may be related to the 3v3 supply current limiting.
+
+===Complete high voltage disconnect===
+not corrected.
+
+Currently the MCVCC must be connected either to BATTGND or BATTVCC. Future revisions should put a switch on MCVCC so the three high voltage leads can be completely isolated from each other. The switch must be able to handle all voltages from 0 to 200V, which would favor something mechanical (you try deciding whether to use N or P type MOSFET that way). Otherwise replacing the TK1 with a 3 or 4-way relay should be investigated.
+
+===Current sensor filters===
+...left alone
+
+The values are to be determined / changed by experiment, however the capacitor footprint is kept at CASEA to accomodate possibility of using a bigger cap.
+
+== Feature Ideas - Not implemented in Unit 01==
+===Reducing sensor noise===
+Currently all the sensors on the board is powered thru either the LTC1474 or the ADuM5401 - both switching regulators. Future board revision should use LDOs such as the MIC5200 to power the sensors. For isolated sensors a combination of 5V ADuM5401 with Logic Level Converters could be used - probably something like [http://focus.ti.com/docs/prod/folders/print/txb0104.html this] (free samples!). Alternatively we can find some smaller isolated DCDC and use it together with the IL717(?).
+
+This is not implemented since the smartdcdc isn't a precision sensor instrument.
+
+===Reducing Cost===
+The ADC (ADS8341) is quite expensive, and no free samples are available D: Future revisions should investigate the alternatives where we can get free samples. Keep in mind that they will need to be coded.
+
+Not put into unit 01 due to time constraints. Anything that require major re-coding is a no-no.
+
+===Proper Relay===
+Future version should use a proper power relay, instead of a signal relay. [http://panasonic-denko.co.jp/ac/e/control/relay/signal/tk/attention/index.jsp this] reccomends not to use it in strong magnetic fields (such as a nearby CSIRO motor I guess), along with all kinds of "not to"s (eg cannot use ultrasonic cleaning)
+
+This is just from reading the specs though. Testing so far indicates no problems, hence no changes are made.
+
+==='''Precharge / Discharge LED'''===
+<s> The precharge and discharge LED is controlled by choosing the LED, LED resistor, and the accompanying zener. 
+
+The original problem was that the precharge / discharge LED would go off before they finish their respective operations (the current will drop off the LED minimum current rating pretty quickly) - this has been fixed. However as the board routing has been finished, few changes can be made, and it is settled with the current design.
+
+The problem is that it is very hard to get the correct value (took me one week to figure it out with dave), and any required changes would mean at least component hunting or board redesign. Furthermore, the current design passes thru a zener - while it is rated properly, it is an additional complexity which can be avoided. Also there is no advantage in having the LED powered directly by the circuit. </s>
+
+''No you idiot, if it is MSP controlled then if the MSP screws up / powered off you wont get any indication! Suppose the telemetry breaker is turned off then it will discharge the wavesculptor without showing any information about state of charge''
+
+===Reflow Soldering===
+It is not possible to reflow everything into place - the MAX1626 has vias in its pads. Not going to change this as not going to risk screwing out layout (switchers hates EM noise)
+
+===Isolation tester===
+Something to think about:
+
+Is there a way to somehow measure that the isolation between the high and low voltage side has / hasn't been broken? I imagined if there's one short then the two sides will have a fixed potential against each other, which could be detected... However having a certain potential doesn't necessarily mean that they're shorted, and I can't think on top of my head on how to measure those potential without actually breaking the isolation barrier...
+
+Too much trouble.
+
+=== CAN Isolation ===
+
+The two power lines are independently fused, so why not separate the CAN-BUS either? Use optocoupler or isolator.
+
+No board space and time.
+
+=== CAN Isolation pt 2===
+
+ISO1050 Status: ACTIVE
+Isolated 5-V CAN Transceivers
+
+might / not compatible? - No supplier in stock. I don't think TI has even produced them yet (back in early 2009).
+
+===Microprocessor Upgrade & Expander===
+Need to check if the MSP430F249 is pin compatible with the 149. If yes then use it.
+
+Gaining an I2C bus means we can use an I2C expander to get multiple IO pins around the contactor switch PCB area without pulling too many tracks a long way from the MSP.
+
+Major rerouting work. Need extra coding. Not going to do that, again time constraints.
+
+[[Category:pcb_designs]]
